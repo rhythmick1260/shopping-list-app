@@ -1,2 +1,20 @@
-# shopping-list-app
-쇼핑 리스트 웹 앱 - HTML/CSS/JavaScript로 만든 로컬스토리지 기반 쇼핑 리스트
+# 쇼핑 리스트 앱
+
+로컬스토리지 기반의 간단한 쇼핑 리스트 웹 앱입니다.
+
+## 기능
+
+- 아이템 추가 (Enter 키 또는 추가 버튼)
+- 체크박스로 완료 표시
+- 개별 아이템 삭제
+- 완료 항목 일괄 삭제
+- 로컬스토리지 자동 저장 (새로고침 후에도 유지)
+
+## 사용법
+
+`shopping-list.html` 파일을 브라우저에서 열면 바로 사용할 수 있습니다.
+
+## 기술 스택
+
+- HTML / CSS / JavaScript (순수 바닐라)
+- Web Storage API (localStorage)
