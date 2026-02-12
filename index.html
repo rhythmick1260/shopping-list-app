@@ -70,6 +70,11 @@
       background: #4338ca;
     }
 
+    .input-row button:disabled {
+      background: #a5b4fc;
+      cursor: not-allowed;
+    }
+
     .stats {
       display: flex;
       justify-content: space-between;
@@ -157,6 +162,24 @@
       padding: 48px 0;
       font-size: 0.95rem;
     }
+
+    .loading {
+      text-align: center;
+      color: #a0aec0;
+      padding: 48px 0;
+      font-size: 0.95rem;
+    }
+
+    .error-msg {
+      text-align: center;
+      color: #e53e3e;
+      padding: 12px;
+      font-size: 0.85rem;
+      background: #fff5f5;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -165,8 +188,10 @@
 
     <div class="input-row">
       <input type="text" id="itemInput" placeholder="아이템을 입력하세요..." />
-      <button onclick="addItem()">추가</button>
+      <button id="addBtn" onclick="addItem()">추가</button>
     </div>
+
+    <div class="error-msg" id="errorMsg"></div>
 
     <div class="stats">
       <span id="statsText">총 0개</span>
@@ -174,21 +199,34 @@
     </div>
 
     <ul id="list"></ul>
-    <p class="empty" id="empty">아직 아이템이 없어요. 추가해보세요!</p>
+    <p class="loading" id="loading">불러오는 중...</p>
+    <p class="empty" id="empty" style="display:none">아직 아이템이 없어요. 추가해보세요!</p>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    let items = JSON.parse(localStorage.getItem('shopping-list') || '[]');
+    const SUPABASE_URL = 'https://rftkmjcztfzcpjtmtfbq.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmdGttamN6dGZ6Y3BqdG10ZmJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4NzI5NTYsImV4cCI6MjA4NjQ0ODk1Nn0.HKSgRnyaly3PhiLyZcBL7kSEKks7pPMkKFvJd21Ue20';
 
-    function save() {
-      localStorage.setItem('shopping-list', JSON.stringify(items));
+    const { createClient } = supabase;
+    const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let items = [];
+
+    function showError(msg) {
+      const el = document.getElementById('errorMsg');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
     }
 
     function render() {
       const list = document.getElementById('list');
       const empty = document.getElementById('empty');
+      const loading = document.getElementById('loading');
       const statsText = document.getElementById('statsText');
 
+      loading.style.display = 'none';
       list.innerHTML = '';
 
       if (items.length === 0) {
@@ -201,14 +239,14 @@
       const checkedCount = items.filter(i => i.checked).length;
       statsText.textContent = `총 ${items.length}개 · 완료 ${checkedCount}개`;
 
-      items.forEach((item, index) => {
+      items.forEach((item) => {
         const li = document.createElement('li');
         if (item.checked) li.classList.add('checked');
 
         li.innerHTML = `
-          <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleItem(${index})" />
+          <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleItem('${item.id}')" />
           <span class="item-text">${escapeHtml(item.text)}</span>
-          <button class="delete-btn" onclick="deleteItem(${index})" title="삭제">✕</button>
+          <button class="delete-btn" onclick="deleteItem('${item.id}')" title="삭제">✕</button>
         `;
 
         list.appendChild(li);
@@ -223,33 +261,97 @@
         .replace(/"/g, '&quot;');
     }
 
-    function addItem() {
+    async function loadItems() {
+      const { data, error } = await db
+        .from('shopping_items')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        showError('데이터를 불러오지 못했어요: ' + error.message);
+        document.getElementById('loading').style.display = 'none';
+        return;
+      }
+
+      items = data;
+      render();
+    }
+
+    async function addItem() {
       const input = document.getElementById('itemInput');
+      const addBtn = document.getElementById('addBtn');
       const text = input.value.trim();
       if (!text) return;
 
-      items.unshift({ text, checked: false });
-      save();
+      addBtn.disabled = true;
+
+      const { data, error } = await db
+        .from('shopping_items')
+        .insert({ text, checked: false })
+        .select()
+        .single();
+
+      addBtn.disabled = false;
+
+      if (error) {
+        showError('추가에 실패했어요: ' + error.message);
+        return;
+      }
+
+      items.unshift(data);
       render();
       input.value = '';
       input.focus();
     }
 
-    function toggleItem(index) {
-      items[index].checked = !items[index].checked;
-      save();
+    async function toggleItem(id) {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      const { error } = await db
+        .from('shopping_items')
+        .update({ checked: !item.checked })
+        .eq('id', id);
+
+      if (error) {
+        showError('업데이트에 실패했어요: ' + error.message);
+        return;
+      }
+
+      item.checked = !item.checked;
       render();
     }
 
-    function deleteItem(index) {
-      items.splice(index, 1);
-      save();
+    async function deleteItem(id) {
+      const { error } = await db
+        .from('shopping_items')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        showError('삭제에 실패했어요: ' + error.message);
+        return;
+      }
+
+      items = items.filter(i => i.id !== id);
       render();
     }
 
-    function clearChecked() {
+    async function clearChecked() {
+      const checkedIds = items.filter(i => i.checked).map(i => i.id);
+      if (checkedIds.length === 0) return;
+
+      const { error } = await db
+        .from('shopping_items')
+        .delete()
+        .in('id', checkedIds);
+
+      if (error) {
+        showError('삭제에 실패했어요: ' + error.message);
+        return;
+      }
+
       items = items.filter(i => !i.checked);
-      save();
       render();
     }
 
@@ -257,7 +359,7 @@
       if (e.key === 'Enter') addItem();
     });
 
-    render();
+    loadItems();
   </script>
 </body>
 </html>
